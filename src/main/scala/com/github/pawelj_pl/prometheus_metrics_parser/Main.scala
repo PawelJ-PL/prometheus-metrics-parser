@@ -10,6 +10,7 @@ object Main extends App {
   val result = Parser().parseE(file.mkString)
   result match {
     case Left(err)      => println(err)
-    case Right(metrics) => println(metrics.mkString("\n"))
+    case Right(metrics) =>
+      println(metrics.mkString("\n"))
   }
 }

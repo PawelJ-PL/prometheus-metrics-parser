@@ -8,7 +8,7 @@ private[parser] object Line {
   case class Comment(content: String) extends Line
   case class Help(name: String, content: String) extends Line
   case class Type(name: String, metricsType: MetricsType) extends Line
-  case class Metric(name: String, labels: Map[String, String], value: Double, timestamp: Option[Long]) extends Line
+  case class Metric(name: String, labels: Map[String, String], value: Double, timestamp: Option[Long], modifier: Option[Modifier]) extends Line
 }
 
 private[parser] sealed trait MetricsType extends Product with Serializable
@@ -27,4 +27,12 @@ private[parser] object MetricsType {
     case "summary"   => Summary
     case _           => Untyped
   }
+}
+
+private[parser] sealed trait Modifier extends Product with Serializable
+
+private[parser] object Modifier {
+  case object Sum extends Modifier
+  case object Count extends Modifier
+  case object Bucket extends Modifier
 }

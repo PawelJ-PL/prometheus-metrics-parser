@@ -34,21 +34,37 @@ class Parser {
         case _ @(_: Line.Invalid | _: Line.Comment | _: Line.Empty.type) =>
           parseBlock(tail, parsedLines, currentMetric) //Ignore invalid or empty lines and comments
         case line @ Line.Help(name, content) =>
-          if (currentMetric.exists(_ != name)) // FIXME: handle _bucket, _sum, count
+          if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Comment]))
             Left(ParseError.MultipleHelpLines(content)) // Fail on duplicate help
           else parseBlock(tail, parsedLines :+ line, Some(name))
         case line @ Line.Type(name, metricsType) =>
-          if (currentMetric.exists(_ != name)) // FIXME: handle _bucket, _sum, count
+          if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Type]))
             Left(ParseError.MultipleTypeLines(metricsType)) // Fail on duplicate type
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Metric]))
             Left(ParseError.TypeNotInTheBeginning) // Fail if type not in the beginning of block
           else parseBlock(tail, parsedLines :+ line, Some(name))
-        case line @ Line.Metric(name, _, _, _) =>
-          if (currentMetric.exists(_ != name)) // FIXME: handle _bucket, _sum, count
+        case line @ Line.Metric(name, labels, value, timestamp, _) =>
+          val currentMetricType: Option[MetricsType] = parsedLines.find(_.isInstanceOf[Line.Type]).map(_.asInstanceOf[Line.Type].metricsType)
+          if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_sum" == name)) { // Handle Histogram and Summary _sum
+            val updatedName = removeSuffix(name, "_sum")
+            val updatedLine = Line.Metric(updatedName, labels, value, timestamp, Some(Modifier.Sum))
+            parseBlock(tail, parsedLines :+ updatedLine, Some(updatedName))
+          }
+          else if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_count" == name)) { // Handle Histogram and Summary _count
+            val updatedName = removeSuffix(name, "_count")
+            val updatedLine = Line.Metric(updatedName, labels, value, timestamp, Some(Modifier.Count))
+            parseBlock(tail, parsedLines :+ updatedLine, Some(updatedName))
+          }
+          else if (currentMetricType.contains(MetricsType.Histogram) && currentMetric.exists(_ + "_bucket" == name)) { // Handle Histogram _bucket
+            val updatedName = removeSuffix(name, "_bucket")
+            val updatedLine = Line.Metric(updatedName, labels, value, timestamp, Some(Modifier.Bucket))
+            parseBlock(tail, parsedLines :+ updatedLine, Some(updatedName))
+          }
+          else if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
           else parseBlock(tail, parsedLines :+ line, Some(name))
       }
@@ -71,7 +87,7 @@ class Parser {
         val maybeMetric = for {
           l <- extractLabels(labels)
           v <- parseValue(value)
-        } yield Line.Metric(name, l, v, parseTimestamp(timestamp))
+        } yield Line.Metric(name, l, v, parseTimestamp(timestamp), None)
         maybeMetric.getOrElse(Line.Invalid(line))
       case l => Line.Invalid(l)
     }
@@ -117,15 +133,15 @@ class Parser {
             case MetricsType.Summary =>
               Metric.Summary(name,
                              maybeHelp,
-                             extractValuesFromLines(parsedLines),
-                             List.empty,
-                             List.empty) //FIXME
+                             extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty)),
+                             extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Sum))),
+                             extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Count))))
             case MetricsType.Histogram =>
               Metric.Histogram(name,
                                maybeHelp,
-                               extractValuesFromLines(parsedLines),
-                               List.empty,
-                               List.empty) //FIXME
+                               extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty)),
+                               extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Sum))),
+                               extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Count))))
             case MetricsType.Untyped =>
               Metric.Untyped(name,
                              maybeHelp,
@@ -135,11 +151,14 @@ class Parser {
       }
   }
 
-  private def extractValuesFromLines(lines: List[Line]): List[MetricValue] =
+  private def extractValuesFromLines(lines: List[Line], predicate: Option[Line.Metric => Boolean] = None): List[MetricValue] =
     lines
       .filter(_.isInstanceOf[Line.Metric])
       .map(_.asInstanceOf[Line.Metric])
+      .filter(predicate.getOrElse(_ => true))
       .map(l => MetricValue(l.labels, l.value, l.timestamp))
+
+  private def removeSuffix(base: String, suffix: String) = base.dropRight(suffix.length)
 
   def parseOpt(rawMetrics: String): Option[List[Metric]] =
     parseE(rawMetrics) match {
