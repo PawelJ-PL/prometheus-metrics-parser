@@ -1,6 +1,6 @@
 package com.github.pawelj_pl.prometheus_metrics_parser.parser
 
-import com.github.pawelj_pl.prometheus_metrics_parser.{Metric, MetricValue}
+import com.github.pawelj_pl.prometheus_metrics_parser.{Metric, MetricValue, Modifier}
 
 import scala.annotation.tailrec
 import scala.util.Try
@@ -192,7 +192,7 @@ class Parser {
       .filter(_.isInstanceOf[Line.Metric])
       .map(_.asInstanceOf[Line.Metric])
       .filter(predicate.getOrElse(_ => true))
-      .map(l => MetricValue(l.labels, l.value, l.timestamp))
+      .map(l => MetricValue(l.labels, l.value, l.timestamp, l.modifier))
 
   private def removeSuffix(base: String, suffix: String) = base.dropRight(suffix.length)
 

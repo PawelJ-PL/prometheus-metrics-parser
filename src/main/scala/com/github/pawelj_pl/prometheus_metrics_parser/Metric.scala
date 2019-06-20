@@ -1,6 +1,14 @@
 package com.github.pawelj_pl.prometheus_metrics_parser
 
-final case class MetricValue(labels: Map[String, String], value: Double, timestamp: Option[Long])
+final case class MetricValue(labels: Map[String, String], value: Double, timestamp: Option[Long], modifier: Option[Modifier])
+
+sealed trait Modifier extends Product with Serializable
+
+object Modifier {
+  case object Sum extends Modifier
+  case object Count extends Modifier
+  case object Bucket extends Modifier
+}
 
 sealed trait Metric extends Product with Serializable {
   def name: String

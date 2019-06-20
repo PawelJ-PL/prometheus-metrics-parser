@@ -1,5 +1,7 @@
 package com.github.pawelj_pl.prometheus_metrics_parser.parser
 
+import com.github.pawelj_pl.prometheus_metrics_parser.Modifier
+
 private[parser] sealed trait Line extends Product with Serializable
 
 private[parser] object Line {
@@ -27,12 +29,4 @@ private[parser] object MetricsType {
     case "summary"   => Summary
     case _           => Untyped
   }
-}
-
-private[parser] sealed trait Modifier extends Product with Serializable
-
-private[parser] object Modifier {
-  case object Sum extends Modifier
-  case object Count extends Modifier
-  case object Bucket extends Modifier
 }
