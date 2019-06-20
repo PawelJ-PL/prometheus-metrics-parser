@@ -5,13 +5,12 @@ import com.github.pawelj_pl.prometheus_metrics_parser.parser.Parser
 import scala.io.Source
 
 object Main extends App {
-  val file = Source.fromFile("/tmp/metrics2")
+  val file = Source.fromFile("/tmp/metrics3")
 
   val result = Parser().parseE(file.mkString)
   result match {
     case Left(err)      => println(err)
     case Right(metrics) =>
-//      println(metrics.mkString("\n"))
-      println(metrics(4))
+      println(metrics.mkString("\n"))
   }
 }

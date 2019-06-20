@@ -14,7 +14,8 @@ class Parser {
   private def parseRest(restLines: List[String],
                 parsed: List[Option[Metric]] = List.empty)
     : Either[ParseError, List[Metric]] = restLines match {
-    case Nil => Right(parsed.flatten)
+    case Nil =>
+      Right(parsed.flatten)
     case _ =>
       parseBlock(restLines) match {
         case Left(err) => Left(err)
@@ -28,7 +29,8 @@ class Parser {
                          parsedLines: List[Line] = List.empty,
                          currentMetric: Option[String] = None)
     : Either[ParseError, (Option[Metric], List[String])] = blockLines match {
-    case Nil => Right(buildMetric(parsedLines), List.empty)
+    case Nil =>
+      Right(buildMetric(parsedLines), List.empty)
     case head :: tail =>
       parseLine(head) match {
         // Process invalid or empty lines and comments
@@ -173,7 +175,7 @@ class Parser {
             case MetricsType.Histogram =>
               Metric.Histogram(name,
                                maybeHelp,
-                               extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty)), // Histogram values
+                               extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty || l.modifier.contains(Modifier.Bucket))), // Histogram values
                                extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Sum))), // Histogram sum
                                extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Count)))) // Histogram Count
             case MetricsType.Untyped =>
