@@ -31,14 +31,17 @@ class Parser {
     case Nil => Right(buildMetric(parsedLines), List.empty)
     case head :: tail =>
       parseLine(head) match {
+        // Process invalid or empty lines and comments
         case _ @(_: Line.Invalid | _: Line.Comment | _: Line.Empty.type) =>
           parseBlock(tail, parsedLines, currentMetric) //Ignore invalid or empty lines and comments
+        // Process HELP
         case line @ Line.Help(name, content) =>
           if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Comment]))
             Left(ParseError.MultipleHelpLines(content)) // Fail on duplicate help
           else parseBlock(tail, parsedLines :+ line, Some(name))
+        // Process TYPE
         case line @ Line.Type(name, metricsType) =>
           if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
@@ -47,25 +50,31 @@ class Parser {
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Metric]))
             Left(ParseError.TypeNotInTheBeginning) // Fail if type not in the beginning of block
           else parseBlock(tail, parsedLines :+ line, Some(name))
+        // Process metric
         case line @ Line.Metric(name, labels, value, timestamp, _) =>
           val currentMetricType: Option[MetricsType] = parsedLines.find(_.isInstanceOf[Line.Type]).map(_.asInstanceOf[Line.Type].metricsType)
-          if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_sum" == name)) { // Handle Histogram and Summary _sum
+          // Handle Histogram and Summary _sum
+          if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_sum" == name)) {
             val updatedName = removeSuffix(name, "_sum")
             val updatedLine = Line.Metric(updatedName, labels, value, timestamp, Some(Modifier.Sum))
             parseBlock(tail, parsedLines :+ updatedLine, Some(updatedName))
           }
-          else if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_count" == name)) { // Handle Histogram and Summary _count
+          // Handle Histogram and Summary _count
+          else if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_count" == name)) {
             val updatedName = removeSuffix(name, "_count")
             val updatedLine = Line.Metric(updatedName, labels, value, timestamp, Some(Modifier.Count))
             parseBlock(tail, parsedLines :+ updatedLine, Some(updatedName))
           }
-          else if (currentMetricType.contains(MetricsType.Histogram) && currentMetric.exists(_ + "_bucket" == name)) { // Handle Histogram _bucket
+          // Handle Histogram _bucket
+          else if (currentMetricType.contains(MetricsType.Histogram) && currentMetric.exists(_ + "_bucket" == name)) {
             val updatedName = removeSuffix(name, "_bucket")
             val updatedLine = Line.Metric(updatedName, labels, value, timestamp, Some(Modifier.Bucket))
             parseBlock(tail, parsedLines :+ updatedLine, Some(updatedName))
           }
+          // Finish block if new metric found
           else if (currentMetric.exists(_ != name))
-            Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
+            Right(buildMetric(parsedLines), head :: tail)
+          // Standard metric
           else parseBlock(tail, parsedLines :+ line, Some(name))
       }
   }
@@ -81,7 +90,7 @@ class Parser {
       case emptyPattern() => Line.Empty
       case typePattern(name, metricType) =>
         Line.Type(name, MetricsType.of(metricType))
-      case helpPattern(name, help) => Line.Help(name, help)
+      case helpPattern(name, help) => Line.Help(name, refineHelp(help))
       case commentPattern(content) => Line.Comment(content)
       case line @ metricPattern(name, labels, value, timestamp) =>
         val maybeMetric = for {
@@ -93,8 +102,31 @@ class Parser {
     }
   }
 
-  private def extractLabels(fragment: String): Option[Map[String, String]] =
-    Some(Map.empty) //FIXME
+  private def refineHelp(value: String) = value
+    .replace("""\\""", """\""") // unescape backslashes
+    .replace("\\n", "\n") // unescape new line
+
+  private def extractLabels(fragment: String): Option[Map[String, String]] = {
+    if (fragment.trim.isEmpty) Some(Map.empty)
+    else {
+      val labelsPattern = """(.*?\s*?=\s*?".*?[^\\]"),?""".r
+      val clearedFragment = fragment.trim.drop(1).dropRight(1).trim
+      val labelsKeyValuePairs = labelsPattern.findAllIn(clearedFragment).matchData.map(_.group(1)).toList
+      val resultMap = labelsKeyValuePairs.flatMap(_.split("""\s*=\s*""", 2).grouped(2).map {
+        case Array(k, v) => k -> refineLabelValue(v)
+      }).toMap
+      Some(resultMap)
+    }
+  }
+
+  private def refineLabelValue(value: String) = {
+    value
+      .replaceAll("^\"", "") // remove leading quotation mark
+      .replaceAll("\"$", "") // remove trailing quotation mark
+      .replace("""\\""", """\""") // unescape backslashes
+      .replace("\\\"", "\"") // unescape quotation marks
+      .replace("""\n""", "\n") // unescape new line
+  }
 
   private def parseValue(fragment: String): Option[Double] =
     fragment.trim match {
@@ -114,11 +146,13 @@ class Parser {
       .map(_.asInstanceOf[Line.Metric].name)
       .map { name =>
         {
+          // Extract type (or Untyped)
           val metricType: MetricsType = parsedLines
             .find(_.isInstanceOf[Line.Type])
             .map(_.asInstanceOf[Line.Type].metricsType)
             .getOrElse(MetricsType.Untyped)
 
+          // Extract optional Help
           val maybeHelp: Option[String] = parsedLines
             .find(_.isInstanceOf[Line.Help])
             .map(_.asInstanceOf[Line.Help].content)
@@ -129,19 +163,19 @@ class Parser {
                              maybeHelp,
                              extractValuesFromLines(parsedLines))
             case MetricsType.Gauge =>
-              Metric.Gauge(name, maybeHelp, extractValuesFromLines(parsedLines))
+              Metric.Gauge(name,maybeHelp, extractValuesFromLines(parsedLines))
             case MetricsType.Summary =>
               Metric.Summary(name,
                              maybeHelp,
-                             extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty)),
-                             extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Sum))),
-                             extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Count))))
+                             extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty)), // Summary values
+                             extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Sum))), // Summary sum
+                             extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Count)))) // Summary count
             case MetricsType.Histogram =>
               Metric.Histogram(name,
                                maybeHelp,
-                               extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty)),
-                               extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Sum))),
-                               extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Count))))
+                               extractValuesFromLines(parsedLines, Some(l => l.modifier.isEmpty)), // Histogram values
+                               extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Sum))), // Histogram sum
+                               extractValuesFromLines(parsedLines, Some(l => l.modifier.contains(Modifier.Count)))) // Histogram Count
             case MetricsType.Untyped =>
               Metric.Untyped(name,
                              maybeHelp,
