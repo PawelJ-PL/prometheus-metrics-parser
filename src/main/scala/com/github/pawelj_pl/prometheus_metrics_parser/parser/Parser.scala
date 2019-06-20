@@ -84,7 +84,7 @@ class Parser {
     val typePattern = "^# TYPE (.+?) (.+?)$".r
     val helpPattern = "^# HELP (.+?) (.+?)$".r
     val commentPattern = "^# (?!HELP|TYPE.*$)(.*)".r
-    val metricPattern = "^(.*?)((?:\\{.*?\\})?)?\\s+(.*?)(\\s.+?)?$".r
+    val metricPattern = "^([a-zA-Z_:][a-zA-Z0-9_:]*?)((?:\\{.*?\\})?)?\\s+(.*?)(\\s.+?)?$".r
 
     line.trim match {
       case emptyPattern() => Line.Empty
@@ -109,7 +109,7 @@ class Parser {
   private def extractLabels(fragment: String): Option[Map[String, String]] = {
     if (fragment.trim.isEmpty) Some(Map.empty)
     else {
-      val labelsPattern = """(.*?\s*?=\s*?".*?[^\\]"),?""".r
+      val labelsPattern = """([a-zA-Z_:][a-zA-Z0-9_:]*?\s*?=\s*?".*?[^\\]"),?""".r
       val clearedFragment = fragment.trim.drop(1).dropRight(1).trim
       val labelsKeyValuePairs = labelsPattern.findAllIn(clearedFragment).matchData.map(_.group(1)).toList
       val resultMap = labelsKeyValuePairs.flatMap(_.split("""\s*=\s*""", 2).grouped(2).map {

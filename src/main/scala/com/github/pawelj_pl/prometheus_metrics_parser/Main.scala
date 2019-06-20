@@ -11,6 +11,7 @@ object Main extends App {
   result match {
     case Left(err)      => println(err)
     case Right(metrics) =>
-      println(metrics.mkString("\n"))
+//      println(metrics.mkString("\n"))
+      println(metrics(4))
   }
 }
