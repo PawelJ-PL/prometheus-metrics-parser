@@ -8,4 +8,6 @@ object ParseError {
   case class MultipleHelpLines(content: String) extends ParseError
   case class MultipleTypeLines(metricsType: MetricsType) extends ParseError
   case object TypeNotAtTheBeginning extends ParseError
+  case class MultipleGroupsOfMetrics(names: Seq[String]) extends ParseError
+  case class DuplicatedLabels(metricName: String, labels: Seq[Map[String, String]]) extends ParseError
 }

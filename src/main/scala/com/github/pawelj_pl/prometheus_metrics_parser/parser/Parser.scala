@@ -15,7 +15,10 @@ class Parser {
                 parsed: List[Option[Metric]] = List.empty)
     : Either[ParseError, List[Metric]] = restLines match {
     case Nil =>
-      Right(parsed.flatten)
+      val flatten = parsed.flatten
+      val duplicatedMetrics = findDuplicates(flatten.map(_.name))
+      if (duplicatedMetrics.nonEmpty) Left(ParseError.MultipleGroupsOfMetrics(duplicatedMetrics))
+      else Right(flatten)
     case _ =>
       parseBlock(restLines) match {
         case Left(err) => Left(err)
@@ -23,6 +26,8 @@ class Parser {
           parseRest(rest, parsed :+ maybeMetric)
       }
   }
+
+  private def findDuplicates[A](values: Seq[A]): Seq[A] = values.diff(values.distinct).distinct
 
   @tailrec
   private def parseBlock(blockLines: List[String],
@@ -50,13 +55,17 @@ class Parser {
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Type]))
             Left(ParseError.MultipleTypeLines(metricsType)) // Fail on duplicate type
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Metric]))
-            Left(ParseError.TypeNotInTheBeginning) // Fail if type not in the beginning of block
+            Left(ParseError.TypeNotAtTheBeginning) // Fail if type not in the beginning of block
           else parseBlock(tail, parsedLines :+ line, Some(name))
         // Process metric
         case line @ Line.Metric(name, labels, value, timestamp, _) =>
           val currentMetricType: Option[MetricsType] = parsedLines.find(_.isInstanceOf[Line.Type]).map(_.asInstanceOf[Line.Type].metricsType)
+          // Handle duplicated labels
+          val duplicatedLabels = findDuplicates((parsedLines :+ line).filter(_.isInstanceOf[Line.Metric]).map(_.asInstanceOf[Line.Metric].labels))
+          if (currentMetric.contains(name) && duplicatedLabels.nonEmpty)
+            Left(ParseError.DuplicatedLabels(name, duplicatedLabels))
           // Handle Histogram and Summary _sum
-          if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_sum" == name)) {
+          else if (currentMetricType.exists(t => t == MetricsType.Histogram || t == MetricsType.Summary) && currentMetric.exists(_ + "_sum" == name)) {
             val updatedName = removeSuffix(name, "_sum")
             val updatedLine = Line.Metric(updatedName, labels, value, timestamp, Some(Modifier.Sum))
             parseBlock(tail, parsedLines :+ updatedLine, Some(updatedName))
@@ -77,7 +86,8 @@ class Parser {
           else if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail)
           // Standard metric
-          else parseBlock(tail, parsedLines :+ line, Some(name))
+          else
+            parseBlock(tail, parsedLines :+ line, Some(name))
       }
   }
 
