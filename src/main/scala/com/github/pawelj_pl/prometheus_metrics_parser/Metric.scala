@@ -5,9 +5,9 @@ final case class MetricValue(labels: Map[String, String], value: Double, timesta
 sealed trait Modifier extends Product with Serializable
 
 object Modifier {
-  case object Sum extends Modifier
-  case object Count extends Modifier
-  case object Bucket extends Modifier
+  final case object Sum extends Modifier
+  final case object Count extends Modifier
+  final case object Bucket extends Modifier
 }
 
 sealed trait Metric extends Product with Serializable {

@@ -7,5 +7,5 @@ sealed trait ParseError extends Product with Serializable
 object ParseError {
   case class MultipleHelpLines(content: String) extends ParseError
   case class MultipleTypeLines(metricsType: MetricsType) extends ParseError
-  case object TypeNotInTheBeginning extends ParseError
+  case object TypeNotAtTheBeginning extends ParseError
 }
