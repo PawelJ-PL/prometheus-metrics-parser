@@ -45,15 +45,16 @@ class Parser {
         case line @ Line.Help(name, content) =>
           if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
-          else if (parsedLines.exists(l => l.isInstanceOf[Line.Comment]))
+          else if (parsedLines.exists(l => l.isInstanceOf[Line.Help]))
             Left(ParseError.MultipleHelpLines(content)) // Fail on duplicate help
-          else parseBlock(tail, parsedLines :+ line, Some(name))
+          else
+            parseBlock(tail, parsedLines :+ line, Some(name))
         // Process TYPE
         case line @ Line.Type(name, metricsType) =>
           if (currentMetric.exists(_ != name))
             Right(buildMetric(parsedLines), head :: tail) // Finish block if new metric found
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Type]))
-            Left(ParseError.MultipleTypeLines(metricsType)) // Fail on duplicate type
+            Left(ParseError.MultipleTypeLines(metricsType.toString.toLowerCase)) // Fail on duplicate type
           else if (parsedLines.exists(l => l.isInstanceOf[Line.Metric]))
             Left(ParseError.TypeNotAtTheBeginning) // Fail if type not in the beginning of block
           else parseBlock(tail, parsedLines :+ line, Some(name))
@@ -93,9 +94,9 @@ class Parser {
 
   private def parseLine(line: String): Line = {
     val emptyPattern = "^$".r
-    val typePattern = "^# TYPE (.+?) (.+?)$".r
-    val helpPattern = "^# HELP (.+?) (.+?)$".r
-    val commentPattern = "^# (?!HELP|TYPE.*$)(.*)".r
+    val typePattern = "^#\\s+TYPE\\s+(.+?)\\s+(.+?)$".r
+    val helpPattern = "^#\\s+HELP\\s+(.+?)\\s+(.+?)$".r
+    val commentPattern = "^#\\s+(?!HELP|TYPE.*$)(.*)".r
     val metricPattern = "^([a-zA-Z_:][a-zA-Z0-9_:]*?)((?:\\{.*?\\})?)?\\s+(.*?)(\\s.+?)?$".r
 
     line.trim match {
@@ -105,11 +106,10 @@ class Parser {
       case helpPattern(name, help) => Line.Help(name, refineHelp(help))
       case commentPattern(content) => Line.Comment(content)
       case line @ metricPattern(name, labels, value, timestamp) =>
-        val maybeMetric = for {
-          l <- extractLabels(labels)
-          v <- parseValue(value)
-        } yield Line.Metric(name, l, v, parseTimestamp(timestamp), None)
-        maybeMetric.getOrElse(Line.Invalid(line))
+        parseValue(value)
+          .map(v =>
+            Line.Metric(name, extractLabels(labels), v, parseTimestamp(timestamp), None))
+          .getOrElse(Line.Invalid(line))
       case l => Line.Invalid(l)
     }
   }
@@ -118,8 +118,8 @@ class Parser {
     .replace("""\\""", """\""") // unescape backslashes
     .replace("\\n", "\n") // unescape new line
 
-  private def extractLabels(fragment: String): Option[Map[String, String]] = {
-    if (fragment.trim.isEmpty) Some(Map.empty)
+  private def extractLabels(fragment: String): Map[String, String] = {
+    if (fragment.trim.isEmpty) Map.empty
     else {
       val labelsPattern = """([a-zA-Z_:][a-zA-Z0-9_:]*?\s*?=\s*?".*?[^\\]"),?""".r
       val clearedFragment = fragment.trim.drop(1).dropRight(1).trim
@@ -127,7 +127,7 @@ class Parser {
       val resultMap = labelsKeyValuePairs.flatMap(_.split("""\s*=\s*""", 2).grouped(2).map {
         case Array(k, v) => k -> refineLabelValue(v)
       }).toMap
-      Some(resultMap)
+      resultMap
     }
   }
 
