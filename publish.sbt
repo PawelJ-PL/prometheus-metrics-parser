@@ -32,7 +32,7 @@ developers := List(
   Developer(
     id    = "Pawelj-PL",
     name  = "Pawel",
-    email = "inne.poczta@mgial.com",
+    email = "inne.poczta@gmail.com",
     url   = url("https://github.com/PawelJ-PL")
   )
 )
