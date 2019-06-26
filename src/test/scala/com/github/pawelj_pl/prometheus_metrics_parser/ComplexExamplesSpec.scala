@@ -11,8 +11,8 @@ class ComplexExamplesSpec extends WordSpec with Matchers with EitherValues {
 
   "Parser" should {
     "parse example from Prometheus doc" in {
-      val input = Source.fromResource("metrics/prometheus_example.txt").mkString
-      val result = parser.parseE(input)
+      val src = Source.fromResource("metrics/prometheus_example.txt")
+      val result = parser.parseE(src.mkString)
       result.right.value shouldBe List(
         Counter("http_requests_total", Some("The total number of HTTP requests."), List(
           MetricValue(Map("method" -> "post", "code" -> "200"), 1027D, Some(1395066363000L), None),
@@ -63,6 +63,7 @@ class ComplexExamplesSpec extends WordSpec with Matchers with EitherValues {
           )
         )
       )
+      src.close()
     }
   }
 }
